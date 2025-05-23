@@ -3,7 +3,7 @@ name: Build and Publish Multi-arch Docker Image
 on:
   push:
     branches:
-      - main   # or your default branch
+      - main
 
 jobs:
   build-and-push:
