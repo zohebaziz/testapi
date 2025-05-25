@@ -34,8 +34,6 @@ class DeploymentController(
 
     logger.info("Deployment begun... Job Id: $jobId")
 
-    return DeploymentResponseDto(DeploymentStatus.RUNNING, jobId)
-
     Thread {
       try {
         val home = System.getProperty("user.home")
