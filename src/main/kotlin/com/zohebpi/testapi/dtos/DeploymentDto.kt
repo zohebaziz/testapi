@@ -4,6 +4,7 @@ enum class DeploymentStatus(
   val value: String
 ) {
   SUCCESS("success"),
+  RUNNING("running"),
   FAILURE("failure")
   ;
 
@@ -13,5 +14,6 @@ enum class DeploymentStatus(
 }
 
 data class DeploymentResponseDto(
-  val deploymentStatus: DeploymentStatus
+  val deploymentStatus: DeploymentStatus,
+  val deploymentId: String
 )
