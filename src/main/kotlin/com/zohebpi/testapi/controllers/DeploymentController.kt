@@ -38,22 +38,35 @@ class DeploymentController(
       try {
         val home = System.getProperty("user.home")
         val scriptPath = "$home/Documents/scripts/deploy-testapi.sh"
+        logger.info("Starting deploy script at path: $scriptPath")
+
         val process = ProcessBuilder("bash", scriptPath)
-          .redirectErrorStream(true)
+          .redirectErrorStream(true) // Combine stderr and stdout
           .start()
-        process.waitFor()
-        val status = if (process.exitValue() == 0) DeploymentStatus.SUCCESS else DeploymentStatus.FAILURE
+
+        // Read output stream and log it
+        val reader = process.inputStream.bufferedReader()
+        reader.forEachLine { line ->
+          logger.info("[deploy script] $line")
+        }
+
+        val exitCode = process.waitFor()
+        logger.info("Deploy script finished with exit code $exitCode")
+
+        val status = if (exitCode == 0) DeploymentStatus.SUCCESS else DeploymentStatus.FAILURE
         setStatus(jobId, status)
+
       } catch (e: Exception) {
         logger.error("Deployment Failed for Job Id: $jobId. With exception stacktrace:", e)
         setStatus(jobId, DeploymentStatus.FAILURE)
       }
     }.start()
 
+
     return DeploymentResponseDto(DeploymentStatus.RUNNING, jobId)
   }
 
-  @GetMapping("/deploy/status/{jobId}")
+  @GetMapping("/status/{jobId}")
   fun getDeployStatus(@PathVariable jobId: String): DeploymentResponseDto {
     val status = getStatus(jobId)
       ?: throw NotFoundException("No job found with ID $jobId")
