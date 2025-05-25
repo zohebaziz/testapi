@@ -14,6 +14,9 @@ jobs:
       id-token: write
 
     steps:
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
       - name: Checkout repo
         uses: actions/checkout@v3
 
@@ -33,3 +36,49 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ghcr.io/${{ github.repository_owner }}/testapi:latest
+
+      - name: Trigger pi deployment
+        id: trigger_deploy
+        run: |
+          response=$(curl -s -X POST "https://${DEPLOY_HOSTNAME}/api/v1/deploy" \
+            -H "x-deploy-token: $DEPLOY_SECRET" \
+            -H "Content-Type: application/json")
+          echo "Response: $response"
+          # extract jobId from JSON response (assuming {"status":"RUNNING","jobId":"<id>"})
+          jobId=$(echo "$response" | jq -r '.jobId')
+          echo "jobId=$jobId" >> $GITHUB_OUTPUT
+
+      - name: Poll deployment status
+        id: poll_status
+        run: |
+          jobId=${{ steps.trigger_deploy.outputs.jobId }}
+          echo "Polling status for job $jobId"
+
+          status=""
+          retries=0
+          max_retries=30
+          sleep_seconds=10
+
+          while [ "$status" != "SUCCESS" ] && [ "$status" != "FAILURE" ] && [ $retries -lt $max_retries ]; do
+            response=$(curl -s -X GET "https://${DEPLOY_HOSTNAME}/api/v1/deploy/deploy/status/$jobId" \
+              -H "x-deploy-token: $DEPLOY_SECRET" \
+              -H "Content-Type: application/json")
+
+            status=$(echo "$response" | jq -r '.status')
+            echo "Current status: $status"
+
+            if [ "$status" == "SUCCESS" ]; then
+              echo "Deployment succeeded"
+              exit 0
+            elif [ "$status" == "FAILURE" ]; then
+              echo "Deployment failed"
+              exit 1
+            fi
+
+            retries=$((retries + 1))
+            echo "Waiting $sleep_seconds seconds before next check..."
+            sleep $sleep_seconds
+          done
+
+          echo "Deployment did not finish within time limit"
+          exit 1
