@@ -4,13 +4,17 @@ import com.zohebpi.testapi.dtos.DeploymentResponseDto
 import com.zohebpi.testapi.dtos.DeploymentStatus
 import com.zohebpi.testapi.utils.BadRequestException
 import com.zohebpi.testapi.utils.ForbiddenException
-import com.zohebpi.testapi.utils.InternalServerErrorException
+import com.zohebpi.testapi.utils.NotFoundException
 import com.zohebpi.testapi.utils.UnauthorizedException
+import com.zohebpi.testapi.utils.loggerService
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import java.util.UUID
 
 private const val DEPLOY_SECRET = "\${deploy.secret}"
 
@@ -19,31 +23,45 @@ private const val DEPLOY_SECRET = "\${deploy.secret}"
 class DeploymentController(
   @Value(DEPLOY_SECRET) private val deploySecret: String?
 ) {
+  private val logger = loggerService<DeploymentController>()
 
   @PostMapping
   fun deploy(@RequestHeader("x-deploy-token") deployToken: String?): DeploymentResponseDto {
     validateDeploymentToken(deployToken)
 
-    val home = System.getProperty("user.home")
-    val scriptPath = "$home/Documents/scripts/deploy-testapi.sh"
+    val jobId = UUID.randomUUID().toString()
+    setStatus(jobId, DeploymentStatus.RUNNING)
 
-    return try {
-      val process = ProcessBuilder("bash", scriptPath)
-        .redirectErrorStream(true)
-        .start()
+    logger.info("Deployment begun... Job Id: $jobId")
 
-      process.inputStream.bufferedReader().readText()
-      val exitCode = process.waitFor()
+    return DeploymentResponseDto(DeploymentStatus.RUNNING, jobId)
 
-      if (exitCode == 0) {
-        DeploymentResponseDto(DeploymentStatus.SUCCESS)
-      } else {
-        throw InternalServerErrorException("Unhandled exception during deployment")
+    Thread {
+      try {
+        val home = System.getProperty("user.home")
+        val scriptPath = "$home/Documents/scripts/deploy-testapi.sh"
+        val process = ProcessBuilder("bash", scriptPath)
+          .redirectErrorStream(true)
+          .start()
+        process.waitFor()
+        val status = if (process.exitValue() == 0) DeploymentStatus.SUCCESS else DeploymentStatus.FAILURE
+        setStatus(jobId, status)
+      } catch (e: Exception) {
+        logger.error("Deployment Failed for Job Id: $jobId. With exception stacktrace:", e)
+        setStatus(jobId, DeploymentStatus.FAILURE)
       }
-    } catch (e: Exception) {
-      throw InternalServerErrorException("Unhandled exception during deployment")
-    }
+    }.start()
+
+    return DeploymentResponseDto(DeploymentStatus.RUNNING, jobId)
   }
+
+  @GetMapping("/deploy/status/{jobId}")
+  fun getDeployStatus(@PathVariable jobId: String): DeploymentResponseDto {
+    val status = getStatus(jobId)
+      ?: throw NotFoundException("No job found with ID $jobId")
+    return DeploymentResponseDto(status, jobId)
+  }
+
 
   private fun validateDeploymentToken(token: String?) {
     if (token.isNullOrEmpty()) throw BadRequestException("Missing or blank deployment key header")
@@ -52,5 +70,15 @@ class DeploymentController(
 
   private fun getDeploymentSecret(): String {
     return deploySecret ?: throw UnauthorizedException("Missing/Invalid deployment key configuration")
+  }
+
+  companion object {
+    private val jobs = mutableMapOf<String, DeploymentStatus>()
+
+    fun setStatus(jobId: String, status: DeploymentStatus) {
+      jobs[jobId] = status
+    }
+
+    fun getStatus(jobId: String): DeploymentStatus? = jobs[jobId]
   }
 }
