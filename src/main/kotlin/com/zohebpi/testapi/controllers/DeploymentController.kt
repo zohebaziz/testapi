@@ -17,11 +17,13 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 private const val DEPLOY_SECRET = "\${deploy.secret}"
+private const val DEPLOY_SCRIPT_PATH = "\${deploy.script.path}"
 
 @RestController
 @RequestMapping("/v1/deploy")
 class DeploymentController(
-  @Value(DEPLOY_SECRET) private val deploySecret: String?
+  @Value(DEPLOY_SECRET) private val deploySecret: String,
+  @Value(DEPLOY_SCRIPT_PATH) private val deployScriptPath: String
 ) {
   private val logger = loggerService<DeploymentController>()
 
@@ -36,11 +38,9 @@ class DeploymentController(
 
     Thread {
       try {
-        val home = System.getProperty("user.home")
-        val scriptPath = "$home/Documents/scripts/deploy-testapi.sh"
-        logger.info("Starting deploy script at path: $scriptPath")
+        logger.info("Starting deploy script at path: $deployScriptPath")
 
-        val process = ProcessBuilder("bash", scriptPath)
+        val process = ProcessBuilder("bash", deployScriptPath)
           .redirectErrorStream(true) // Combine stderr and stdout
           .start()
 
@@ -76,11 +76,7 @@ class DeploymentController(
 
   private fun validateDeploymentToken(token: String?) {
     if (token.isNullOrEmpty()) throw BadRequestException("Missing or blank deployment key header")
-    if (token != getDeploymentSecret()) throw ForbiddenException("Invalid deployment key")
-  }
-
-  private fun getDeploymentSecret(): String {
-    return deploySecret ?: throw UnauthorizedException("Missing/Invalid deployment key configuration")
+    if (token != deploySecret) throw ForbiddenException("Invalid deployment key")
   }
 
   companion object {
