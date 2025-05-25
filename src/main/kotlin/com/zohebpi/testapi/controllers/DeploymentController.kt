@@ -28,7 +28,11 @@ class DeploymentController(
   private val logger = loggerService<DeploymentController>()
 
   @PostMapping
-  fun deploy(@RequestHeader("x-deploy-token") deployToken: String?): DeploymentResponseDto {
+  @RequestMapping("/{serviceName}")
+  fun deploy(
+    @RequestHeader("x-deploy-token",) deployToken: String?,
+    @PathVariable serviceName: String
+  ): DeploymentResponseDto {
     validateDeploymentToken(deployToken)
 
     val jobId = UUID.randomUUID().toString()
@@ -38,9 +42,10 @@ class DeploymentController(
 
     Thread {
       try {
-        logger.info("Starting deploy script at path: $deployScriptPath")
+        val fullDeployScriptPath = "$deployScriptPath/deploy-$serviceName.sh"
+        logger.info("Starting deploy script at path: $fullDeployScriptPath")
 
-        val process = ProcessBuilder("bash", deployScriptPath)
+        val process = ProcessBuilder("bash", fullDeployScriptPath)
           .redirectErrorStream(true) // Combine stderr and stdout
           .start()
 
